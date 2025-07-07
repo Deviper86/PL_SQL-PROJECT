@@ -1,0 +1,290 @@
+-------SOLUTION------------
+
+
+---first we will need to create the tables(guests table, rooms table, bookings table)
+
+CREATE TABLE HR.GUESTS (
+    guest_id NUMBER PRIMARY KEY,
+    guest_name VARCHAR2(100),
+    reg_date DATE,
+    room_id NUMBER,
+    status VARCHAR2(100),
+    signout_date DATE
+);
+
+CREATE TABLE HR.ROOMS (
+    room_num NUMBER PRIMARY KEY,
+    guest_id NUMBER,
+    room_status VARCHAR2(205),
+    status_date DATE,
+    CONSTRAINT fk_rooms_guest FOREIGN KEY (guest_id) REFERENCES HR.GUESTS(guest_id)
+);
+
+
+CREATE TABLE HR.BOOKINGS (
+    BOOKING_NUM NUMBER PRIMARY KEY,
+    ROOM_ID NUMBER,
+    GUEST_ID NUMBER,
+    GUEST_NAME VARCHAR2(100),
+    START_DATE DATE,
+    END_DATE DATE,
+    NOTE VARCHAR2(200),
+    CONSTRAINT fk_guest FOREIGN KEY (GUEST_ID) REFERENCES HR.GUESTS(GUEST_ID)
+);
+
+
+-----Next we create GuestID and BOOKID sequences
+
+CREATE SEQUENCE seq_guestid
+START WITH 1
+INCREMENT BY 1
+MAXVALUE 999999999
+NOCACHE
+NOCYCLE;
+
+
+CREATE SEQUENCE seq_bookid
+START WITH 1
+INCREMENT BY 1
+MAXVALUE 999999999
+NOCACHE
+NOCYCLE;
+
+-----Next we create the Booking trigger
+
+CREATE OR REPLACE TRIGGER tr_guest_add
+AFTER INSERT ON HR.BOOKINGS
+FOR EACH ROW
+
+DECLARE
+
+  v_guest_id      HR.GUESTS.guest_id%TYPE;
+  v_guest_name    VARCHAR2(100);
+  v_room_id       HR.GUESTS.room_id%TYPE;
+  v_signout_date  HR.GUESTS.signout_date%TYPE;
+
+
+BEGIN
+
+  -----Extracting latest values directly from BOOKINGS TABLE using :NEW
+
+  v_guest_id     := :NEW.guest_id;
+  v_guest_name   := :NEW.guest_name;
+  v_room_id      := :NEW.room_id;
+  v_signout_date := :NEW.end_date;
+
+
+
+  -----Insert into GUESTS table
+
+  INSERT INTO HR.GUESTS (guest_id, guest_name, reg_date, room_id, status, signout_date) VALUES (v_guest_id, v_guest_name, SYSDATE, v_room_id, 'BOOKED', v_signout_date);
+
+  DBMS_OUTPUT.PUT_LINE('New Guest: ' || v_guest_id || ' added successfully.');
+
+
+EXCEPTION
+  WHEN NO_DATA_FOUND THEN
+    DBMS_OUTPUT.PUT_LINE('Guest name not found for guest_id: ' || :NEW.guest_id);
+  WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE('An unexpected error occurred: ' || SQLERRM);
+
+END;
+
+/
+
+
+
+
+---Next we will write the procedures inside a package
+
+CREATE OR REPLACE PACKAGE pkg_Hosp_mgt IS
+
+---specifications
+
+	PROCEDURE p_room_add (v_room_id IN NUMBER);
+
+	PROCEDURE p_book_inq (v_book_num IN NUMBER,v_room_stat OUT VARCHAR2,v_room_id OUT NUMBER, v_guest_id OUT NUMBER);
+
+	PROCEDURE p_book_reg (v_guest_name IN VARCHAR2,v_room_num IN NUMBER,v_signout IN DATE, v_guest_id OUT NUMBER);
+
+	FUNCTION f_guest_inq (v_guest_id NUMBER) RETURN VARCHAR;
+
+END pkg_Hosp_mgt;
+
+/
+
+
+
+
+----------Package Body------------
+
+CREATE OR REPLACE PACKAGE BODY pkg_Hosp_mgt IS
+
+----- First Procedure implementation
+
+PROCEDURE p_room_add (v_room_id IN NUMBER) IS
+
+BEGIN
+
+   INSERT INTO HR.ROOMS (ROOM_NUM,GUEST_ID,Status_date,room_status) VALUES(v_room_id,NULL,SYSDATE,'NEW ROOM ADDED');
+     IF SQL%ROWCOUNT = 1 THEN
+	DBMS_OUTPUT.PUT_LINE('New room: ' ||v_room_id|| ' added successfully.');
+	COMMIT;
+     ELSE 
+        DBMS_OUTPUT.PUT_LINE('New room: ' ||v_room_id|| ' Failed to be added.');
+     END IF;
+
+EXCEPTION
+
+  WHEN OTHERS THEN
+    ROLLBACK;
+    DBMS_OUTPUT.PUT_LINE('An error occurred: ' || SQLERRM);
+
+END;
+
+
+-----Second Procedure implementation
+
+PROCEDURE p_book_inq(v_book_num IN NUMBER,v_room_stat OUT VARCHAR2,v_room_id OUT NUMBER, v_guest_id OUT NUMBER) IS
+
+BEGIN
+	SELECT ROOM_ID,GUEST_ID,NOTE INTO v_room_id,v_guest_id,v_room_stat FROM HR.BOOKINGS WHERE BOOKING_NUM=v_book_num;
+        DBMS_OUTPUT.PUT_LINE('Booking with booking num: ' || v_book_num || ' found');
+
+EXCEPTION
+
+  WHEN NO_DATA_FOUND THEN
+    DBMS_OUTPUT.PUT_LINE ('No booking found with book number: ' || v_book_num);
+---- Set default values for OUT parameters
+    v_room_id := NULL;
+    v_guest_id := NULL;
+    v_room_stat := 'Not found';
+  WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE ('An unexpected error occurred: ' || SQLERRM);
+---- Set default values for OUT parameters
+    v_room_id := NULL;
+    v_guest_id := NULL;
+    v_room_stat := 'Not found';
+
+END;
+
+
+------Third Procedure Implementation
+
+PROCEDURE p_book_reg (v_guest_name IN VARCHAR2,v_room_num IN NUMBER,v_signout IN DATE, v_guest_id OUT NUMBER) IS
+
+v_book_num NUMBER;
+
+BEGIN
+
+    v_book_num:= seq_bookid.NEXTVAL;
+    v_guest_id:= seq_guestid.NEXTVAL; 
+
+      INSERT INTO HR.BOOKINGS (BOOKING_NUM,ROOM_ID,GUEST_ID,guest_name,START_DATE,END_DATE,NOTE) VALUES(v_book_num,v_room_num,v_guest_id,v_guest_name,SYSDATE,v_signout,'actively booked');
+	IF SQL%ROWCOUNT =1 THEN
+	DBMS_OUTPUT.PUT_LINE('New booking: ' ||v_book_num|| ' added successfully.');
+	COMMIT;
+	UPDATE HR.ROOMS SET GUEST_ID=v_guest_id where room_num=v_room_num;
+        IF SQL%ROWCOUNT =1 THEN
+	DBMS_OUTPUT.PUT_LINE('room: ' ||v_room_num|| ' updated successfully.');
+	COMMIT;
+	ELSE
+	DBMS_OUTPUT.PUT_LINE('room: ' ||v_room_num|| ' Failed to be updated.');
+	END IF;
+
+	ELSE 
+	DBMS_OUTPUT.PUT_LINE('New Booking: ' ||v_book_num|| ' Failed to be added.');
+	END IF;
+
+EXCEPTION
+
+  WHEN OTHERS THEN
+    ROLLBACK;
+    DBMS_OUTPUT.PUT_LINE('An error occurred: ' || SQLERRM);
+  v_guest_id:=NULL;
+END;
+
+
+----Function Implementation
+
+FUNCTION f_guest_inq (v_guest_id NUMBER) RETURN VARCHAR IS
+
+	  v_guest_name guests.guest_name%TYPE;
+	  v_reg_date guests.reg_date%TYPE;
+	  v_room_id guests.room_id%TYPE;
+	  v_signout_date guests.signout_date%TYPE;
+	  v_status guests.status%TYPE;
+	  v_resp VARCHAR2(1000);
+
+BEGIN
+
+	SELECT guest_name,reg_date,room_id,status,signout_date into v_guest_name,v_reg_date,v_room_id,v_status,v_signout_date from HR.GUESTS WHERE guest_id=v_guest_id;
+	
+	v_resp := 'The guest with guest id: ' || v_guest_id ||
+            ' has booking details: Name = ' || v_guest_name ||
+            ', Registration Date = ' || TO_CHAR(v_reg_date, 'YYYY-MM-DD') ||
+            ', Room ID = ' || v_room_id ||
+            ', Status = ' || v_status ||
+            ', Signout Date = ' || TO_CHAR(v_signout_date, 'YYYY-MM-DD');
+
+	RETURN v_resp;
+
+EXCEPTION
+
+  WHEN NO_DATA_FOUND THEN
+    RETURN 'No guest found with guest ID: ' || v_guest_id;
+  WHEN OTHERS THEN
+    RETURN 'An unexpected error occurred: ' || SQLERRM;
+
+END;
+
+END pkg_Hosp_mgt;
+/
+
+
+
+------TO CALL THE PACKAGE FUNCTIONS AND PROCEDURES
+
+DECLARE
+
+v_roomnum NUMBER:=&new_room;
+
+BEGIN
+------ to add any room number
+
+pkg_Hosp_mgt.p_room_add(v_roomnum);
+DBMS_OUTPUT.PUT_LINE('Room: ' || v_roomnum ||' Added successfully');
+END;
+/
+
+-----TO REGISTER BOOKING
+
+DECLARE
+  v_guest_id NUMBER;
+BEGIN
+  pkg_Hosp_mgt.p_book_reg('Yemi Olas', 101, DATE '2025-07-12', v_guest_id);
+  DBMS_OUTPUT.PUT_LINE('Guest ID: ' || v_guest_id);
+END;
+/
+
+----view booking Info
+
+DECLARE
+  v_status VARCHAR2(200);
+  v_room_id NUMBER;
+  v_guest_id NUMBER;
+BEGIN
+  pkg_Hosp_mgt.p_book_inq(1, v_status, v_room_id, v_guest_id);
+  DBMS_OUTPUT.PUT_LINE('Room Status: ' || v_status);
+END;
+/
+
+
+
+------GUEST INFO LOOKUP
+
+DECLARE
+  v_result VARCHAR2(1000);
+BEGIN
+  v_result := pkg_Hosp_mgt.f_guest_inq(1);
+  DBMS_OUTPUT.PUT_LINE(v_result);
