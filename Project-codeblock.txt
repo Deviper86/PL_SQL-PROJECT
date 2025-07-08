@@ -288,3 +288,13 @@ DECLARE
 BEGIN
   v_result := pkg_Hosp_mgt.f_guest_inq(1);
   DBMS_OUTPUT.PUT_LINE(v_result);
+
+
+
+© 2025 Nzeogu Onyekachi. All rights reserved.
+
+This PL/SQL code and project files are the intellectual property of Nzeogu Onyekachi.  
+Unauthorized copying, reproduction, distribution, or use of any part of this project without explicit permission is strictly prohibited.
+
+For educational or collaborative use, please contact: onyekachinzeogu@gmail.com or open an issue on the GitHub repository.
+
